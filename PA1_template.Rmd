@@ -1,0 +1,103 @@
+---
+title: "Assignment 1 of Reproducible Research course"
+author: "Rabi Ghoshdastidar"
+date: "Sunday, November 15, 2015"
+output: html_document
+---
+
+This assignment is of 2 parts, one without the missing Data and next with the missing data. The project is
+about analysing activity pattern of an individual over a span of 2 months. I have downloaded the data from
+the course website and unzipped to get the activity.csv file
+
+**Section 1 (without missing data)**
+
+First we will read the data and omit the missing data and include all the relevant library
+
+```{r, echo=TRUE}
+library(sqldf)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+
+activity <- read.csv("activity.csv")
+activityData <- na.omit(transform(activity,steps = as.numeric(steps)))
+```
+
+Group the steps over date and plot a histrogarm of the steps
+
+```{r}
+datedata <- sqldf("select date,sum(steps) as totalsteps from activityData group by date")
+attach(datedata)
+hist(totalsteps,main="Histogram for Steps",xlab="Total Steps",border="blue", 
+     col="green" )
+```
+
+Calculate mean and median of the total number of steps
+```{r}
+mean(totalsteps)
+median(totalsteps)
+```
+To find out a tren of average daily pattern we will plot a time series plot of the 5-minute interval and the average number of steps taken, averaged across all days
+```{r}
+intervaldata <- sqldf("select interval,avg(steps) as avgsteps from activityData group by interval")
+
+ggplot(intervaldata, aes(interval,avgsteps),type="l") + geom_line() + xlab("Interval") + ylab("Average Steps")
+
+```
+
+The plot shows maximum average steps is at time interval 835, 206 steps. The time series plot also shows on an average the person did maximum activity 8:30 AM - 8:40 AM
+
+**Section 2 (Imputing missing values)**
+
+Total number of missing values in the dataset is  
+
+```{r}  
+attach(activity)
+sum(is.na(steps))
+```
+For the sake of analysis we will try to see the impact of replacing missing values in the dataset
+We will replace the missing values with average of values for that time interval across all the days
+
+
+```{r}
+
+  mergeddata <- data.table(sqldf("select a.date, a.interval, a.steps, b.avgsteps from activity a, intervaldata b where a.interval=b.interval"))
+
+  mergeddata <- mergeddata[is.na(steps), steps := avgsteps]
+
+  datedata <- sqldf("select date,sum(steps) as totalsteps from mergeddata group by date")
+
+  attach(datedata)
+
+  hist(totalsteps,main="Histogram for Steps imputing missing values",xlab="Total Steps",border="green", 
+     col="yellow" )
+```
+
+Calculate mean and median of the total number of steps imputing missing values
+```{r}
+mean(totalsteps)
+median(totalsteps)
+```
+
+Both mean and median decreased after imputing the missing values, since most of the missing values are in early part of the days. Also we are considering steps as integer so there is lot of ronding discrepancy, if steps would have been calculated as double type that could give us a little different picture.
+
+To find out the differences in activity patterns between weekdays and weekends, we need to create a factor wDay, indication whether the day is a weekday or weekend
+
+```{r,fig.width=13,fig.height=8}
+attach(mergeddata)
+
+date <- as.Date(date)
+
+weekdays1 <- c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
+
+mergeddata$wDay <- factor((weekdays(date) %in% weekdays1),levels=c(FALSE, TRUE), labels=c('Weekend', 'Weekday'))
+
+weekdata <- sqldf("select wDay, interval,avg(steps) as avgsteps from mergeddata group by wDay, interval")
+
+g <- ggplot(weekdata, aes(interval,avgsteps),type="l")
+print (g + geom_line(aes(color=wDay),size=1) + facet_grid(.~wDay) + xlab("Interval") + ylab("Average Steps"))
+
+```
+
+The time series plots for Weekdays and Weekend shows - Average Weekend activities are more but on Weekdays activity during the time 8:30 AM - 9:00 AM is more than the Weekend. This indicates the person on Weekdays may be going to work, at the same time we see a little surge around 7 PM in the evening.
+
